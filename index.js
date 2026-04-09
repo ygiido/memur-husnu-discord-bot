@@ -7,14 +7,15 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent, 
         GatewayIntentBits.GuildMembers
     ]
 });
 
 client.commands = new Collection();
+client.afkList = new Collection(); // AFK olan kişileri burada aklında tutacak
 const commandsArray = [];
 
-// Komut dosyalarını okuma
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
@@ -28,20 +29,35 @@ for (const file of commandFiles) {
 }
 
 client.once('ready', async () => {
-    console.log(`${client.user.tag} olarak giriş yapıldı!`);
+    console.log(`${client.user.tag} sahaya indi!`);
     
-    // Slash komutlarını Discord'a kaydetme
     const rest = new REST().setToken(process.env.TOKEN);
     try {
-        console.log('Slash (/) komutları yükleniyor...');
-        await rest.put(
-            Routes.applicationCommands(client.user.id),
-            { body: commandsArray },
-        );
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray });
         console.log('Komutlar başarıyla yüklendi!');
     } catch (error) {
         console.error('Hata:', error);
     }
+});
+
+// AFK RADARI: Chatteki her mesajı dinleyen sistem
+client.on('messageCreate', async message => {
+    if (message.author.bot || !message.guild) return;
+
+    // 1. KONTROL: Eğer mesajı yazan kişi AFK ise, onu AFK modundan çıkar
+    if (client.afkList.has(message.author.id)) {
+        client.afkList.delete(message.author.id);
+        const yazi = await message.reply('Hoş geldin! AFK modundan çıktın.');
+        setTimeout(() => yazi.delete().catch(() => {}), 5000); // 5 saniye sonra kendi mesajını siler
+    }
+
+    // 2. KONTROL: Eğer mesajda biri etiketlendiyse ve o kişi AFK ise cevap ver
+    message.mentions.users.forEach(user => {
+        if (client.afkList.has(user.id)) {
+            const sebep = client.afkList.get(user.id);
+            message.reply(`Zzz... **${user.username}** şu anda AFK. Sebep: **${sebep}**`);
+        }
+    });
 });
 
 client.on('interactionCreate', async interaction => {
@@ -54,7 +70,7 @@ client.on('interactionCreate', async interaction => {
         await command.execute(interaction);
     } catch (error) {
         console.error(error);
-        await interaction.reply({ content: 'Bu komutu çalıştırırken bir hata oluştu!', ephemeral: true });
+        await interaction.reply({ content: 'Bir hata oluştu!', ephemeral: true });
     }
 });
 
