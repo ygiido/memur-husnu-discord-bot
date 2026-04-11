@@ -16,5 +16,6 @@ module.exports = {
         interaction.client.afkList.set(kullaniciId, sebep);
 
         await interaction.reply(`Başarıyla AFK moduna geçtin. Biri seni etiketlerse **"${sebep}"** diyeceğim.`);
+        setTimeout(() => yazi.delete().catch(() => {}), 5000); // 5 saniye sonra kendi mesajını siler
     },
 };
