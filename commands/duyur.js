@@ -10,7 +10,7 @@ module.exports = {
     async execute(interaction) {
         const kanal = interaction.options.getChannel('kanal');
         const mesaj = interaction.options.getString('mesaj');
-        await kanal.send(`@everyone\n\n**Duyuru:** ${mesaj}`);
+        await kanal.send(`@here\n\n**Duyuru** ${mesaj}`);
         await interaction.reply({ content: 'Duyuru gönderildi.', ephemeral: true });
     },
 };
