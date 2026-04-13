@@ -74,4 +74,97 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
+const fs = require('fs');
+const path = require('path');
+const { EmbedBuilder } = require('discord.js');
+
+// Veritabanı okuma fonksiyonu
+const getGuildData = (guildId) => {
+    const dataPath = path.join(__dirname, 'data.json');
+    const db = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+    return db[guildId] || null;
+};
+
+// --- LOG SİSTEMİ ---
+client.on('messageDelete', async (message) => {
+    if (!message.guild || message.author?.bot) return;
+    const settings = getGuildData(message.guild.id);
+    if (!settings || !settings.logChannelId) return;
+
+    const logChannel = message.guild.channels.cache.get(settings.logChannelId);
+    if (logChannel) {
+        const embed = new EmbedBuilder()
+            .setColor('Red')
+            .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL() })
+            .setTitle('🗑️ Mesaj Silindi')
+            .addFields(
+                { name: 'Kanal', value: `${message.channel}`, inline: true },
+                { name: 'İçerik', value: message.content || '*İçerik bulunamadı*' }
+            )
+            .setTimestamp();
+        logChannel.send({ embeds: [embed] });
+    }
+});
+
+client.on('messageUpdate', async (oldMsg, newMsg) => {
+    if (!oldMsg.guild || oldMsg.author?.bot || oldMsg.content === newMsg.content) return;
+    const settings = getGuildData(oldMsg.guild.id);
+    if (!settings || !settings.logChannelId) return;
+
+    const logChannel = oldMsg.guild.channels.cache.get(settings.logChannelId);
+    if (logChannel) {
+        const embed = new EmbedBuilder()
+            .setColor('Yellow')
+            .setAuthor({ name: oldMsg.author.tag, iconURL: oldMsg.author.displayAvatarURL() })
+            .setTitle('✏️ Mesaj Düzenlendi')
+            .addFields(
+                { name: 'Eski Hali', value: oldMsg.content || '*Boş*' },
+                { name: 'Yeni Hali', value: newMsg.content || '*Boş*' }
+            )
+            .setTimestamp();
+        logChannel.send({ embeds: [embed] });
+    }
+});
+
+// --- ANTİ-LİNK VE UYARI SİSTEMİ ---
+const warnings = new Map();
+
+client.on('messageCreate', async (message) => {
+    if (!message.guild || message.author.bot || message.member.permissions.has('Administrator')) return;
+
+    const linkRegex = /(https?:\/\/[^\s]+)/g;
+    if (linkRegex.test(message.content)) {
+        const settings = getGuildData(message.guild.id);
+        if (!settings) return;
+
+        await message.delete().catch(() => {});
+        
+        const userId = message.author.id;
+        const currentWarn = (warnings.get(userId) || 0) + 1;
+        warnings.set(userId, currentWarn);
+
+        if (currentWarn >= 3) {
+            const muteRole = message.guild.roles.cache.get(settings.muteRoleId);
+            if (muteRole) {
+                await message.member.roles.add(muteRole).catch(() => {});
+                const muteEmbed = new EmbedBuilder()
+                    .setColor('DarkRed')
+                    .setTitle('🔒 Susturuldu')
+                    .setDescription(`${message.author}, 3 kez link paylaştığın için susturma rolü verildi.`)
+                    .setTimestamp();
+                message.channel.send({ embeds: [muteEmbed] });
+                warnings.delete(userId);
+            }
+        } else {
+            const warnEmbed = new EmbedBuilder()
+                .setColor('Orange')
+                .setTitle('⚠️ Link Yasak')
+                .setDescription(`${message.author}, bu sunucuda link paylaşamazsın!\n**Kalan Uyarı Hakkın:** \`${3 - currentWarn}\``);
+            
+            const msg = await message.channel.send({ embeds: [warnEmbed] });
+            setTimeout(() => msg.delete().catch(() => {}), 5000);
+        }
+    }
+});
+
 client.login(process.env.TOKEN);
