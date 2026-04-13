@@ -158,12 +158,46 @@ client.on('messageCreate', async (message) => {
         } else {
             const warnEmbed = new EmbedBuilder()
                 .setColor('Orange')
-                .setTitle('⚠️ Link Yasak')
-                .setDescription(`${message.author}, bu sunucuda link paylaşamazsın!\n**Kalan Uyarı Hakkın:** \`${3 - currentWarn}\``);
+                .setTitle('⚠️ Link Yasak La')
+                .setDescription(`${message.author}, link atma knk!\n**Kalan Uyarı Hakkın:** \`${3 - currentWarn}\``);
             
             const msg = await message.channel.send({ embeds: [warnEmbed] });
             setTimeout(() => msg.delete().catch(() => {}), 5000);
         }
+    }
+});
+
+// Biri sunucuya katıldığında
+client.on('guildMemberAdd', async (member) => {
+    const settings = getGuildData(member.guild.id);
+    if (!settings || !settings.logChannelId) return;
+
+    const logChannel = member.guild.channels.cache.get(settings.logChannelId);
+    if (logChannel) {
+        const embed = new EmbedBuilder()
+            .setColor('Green')
+            .setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL() })
+            .setTitle('📥 Biri Katıldı')
+            .setDescription(`${member} Geldi amk. Nüfus: **${member.guild.memberCount}**`)
+            .setTimestamp();
+        logChannel.send({ embeds: [embed] });
+    }
+});
+
+// Biri sunucudan ayrıldığında
+client.on('guildMemberRemove', async (member) => {
+    const settings = getGuildData(member.guild.id);
+    if (!settings || !settings.logChannelId) return;
+
+    const logChannel = member.guild.channels.cache.get(settings.logChannelId);
+    if (logChannel) {
+        const embed = new EmbedBuilder()
+            .setColor('DarkRed')
+            .setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL() })
+            .setTitle('📤 Biri Ayrıldı')
+            .setDescription(`${member} siktir oldu gitti`)
+            .setTimestamp();
+        logChannel.send({ embeds: [embed] });
     }
 });
 
