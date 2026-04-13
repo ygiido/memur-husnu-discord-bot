@@ -170,17 +170,27 @@ client.on('messageCreate', async (message) => {
         const currentWarn = (warnings.get(userId) || 0) + 1;
         warnings.set(userId, currentWarn);
 
-        if (currentWarn >= 3) {
+       if (currentWarn >= 5) {
             if (muteRole) {
+                // 1. Rolü ver
                 await message.member.roles.add(muteRole).catch(() => {});
-                message.channel.send(`🔒 ${message.author}, kuralları 3 kez ihlal ettiğiniz için susturuldunuz.`);
-                warnings.delete(userId); // Cezayı alınca uyarıyı sıfırla
+                
+                // 2. Discord üzerinden süreli sustur (Timeout) uygula
+                const cezaSuresi = settings.antilinkDuration || 10; // Kurulumda girilen süre (girilmediyse 10 dk)
+                await message.member.timeout(cezaSuresi * 60 * 1000, "5 kez yetkisiz link paylaşımı").catch(() => {});
+
+                message.channel.send(`🔒 ${message.author}, kuralları 5 kez ihlal ettiğiniz için cezalı rolünüz verildi ve **${cezaSuresi} dakika** boyunca susturuldunuz.`);
+                
+                // 3. Log sistemine haber ver
+                if (settings.logActive && settings.logChannelId) {
+                    const logChannel = message.guild.channels.cache.get(settings.logChannelId);
+                    if (logChannel) {
+                        const logMesaji = `⚖️ **Otomatik Ceza**\n👤 **Kullanıcı:** ${message.author}\n⏳ **Süre:** ${cezaSuresi} Dakika\n📝 **Sebep:** 3 Kez Link Paylaşımı\n──────────────────`;
+                        logChannel.send(logMesaji).catch(() => {});
+                    }
+                }
+                warnings.delete(userId); 
             }
         } else {
-            const msg = await message.channel.send(`⚠️ ${message.author}, bu sunucuda link paylaşamazsınız! (Kalan Hakkınız: ${3 - currentWarn})`);
-            setTimeout(() => msg.delete().catch(() => {}), 5000);
-        }
-    }
-});
-
+           
 client.login(process.env.TOKEN);
