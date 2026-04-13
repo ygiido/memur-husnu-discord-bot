@@ -8,7 +8,7 @@ module.exports = {
             option.setName('miktar')
                 .setDescription('Kaç mesaj silinecek? (1-100 arası)')
                 .setMinValue(1)
-                .setMaxValue(100)
+                .setMaxValue(150)
                 .setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
     async execute(interaction) {
@@ -18,6 +18,6 @@ module.exports = {
         await interaction.channel.bulkDelete(miktar, true);
         
         // Komutu kullanana gizli bilgi ver
-        await interaction.reply({ content: `🧹 Temizlik yapıldı! **${miktar}** adet mesaj uzaya fırlatıldı.`, ephemeral: true });
+        await interaction.reply({ content: `Temizlik yapıldı! **${miktar}** adet mesajı sildim.`, ephemeral: true });
     },
 };
