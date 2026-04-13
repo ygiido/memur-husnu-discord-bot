@@ -112,6 +112,31 @@ client.on('messageUpdate', async (oldMsg, newMsg) => {
 const warnings = new Map();
 
 client.on('messageCreate', async (message) => {
+
+// === CAPS LOCK ENGELLEME SİSTEMİ ===
+    // Ayarları çekiyoruz (Eğer anti-link için zaten settings çektiysen, o satırın altına koyabilirsin)
+    const settings = getGuildData(message.guild.id);
+    
+    // Eğer sistem açıksa ve mesaj 5 karakterden uzunsa kontrol et
+    if (settings && settings.capsActive && message.content.length > 5) {
+        // Sadece harfleri filtrele (sayıları ve sembolleri yoksay)
+        const harfler = message.content.replace(/[^a-zA-ZğüşıöçĞÜŞİÖÇ]/g, '');
+        
+        if (harfler.length > 0) {
+            // Büyük harfleri say
+            const buyukHarfler = harfler.split('').filter(c => c === c.toUpperCase()).length;
+            const oran = buyukHarfler / harfler.length;
+
+            // Eğer mesajın %70'inden fazlası büyük harfse engelle
+            if (oran > 0.7) {
+                await message.delete().catch(() => {});
+                const uyari = await message.channel.send(`🔠 ${message.author}, lütfen sürekli büyük harf kullanarak bağırmayın!`);
+                setTimeout(() => uyari.delete().catch(() => {}), 5000);
+                return; // Buradan return atıyoruz ki altındaki link kontrollerine vb. girmesin
+            }
+        }
+    }
+    
     if (!message.guild || message.author.bot || message.member.permissions.has('Administrator')) return;
 
     const settings = getGuildData(message.guild.id);
