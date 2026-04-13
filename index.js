@@ -74,130 +74,87 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-const fs = require('fs');
-const path = require('path');
-const { EmbedBuilder } = require('discord.js');
-
-// Veritabanı okuma fonksiyonu
+// --- VERİTABANI YARDIMCI FONKSİYONU ---
 const getGuildData = (guildId) => {
     const dataPath = path.join(__dirname, 'data.json');
-    const db = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-    return db[guildId] || null;
+    if (!fs.existsSync(dataPath)) fs.writeFileSync(dataPath, '{}');
+    return JSON.parse(fs.readFileSync(dataPath, 'utf8'))[guildId] || null;
 };
 
-// --- LOG SİSTEMİ ---
+// ================= 1. DÜZ METİN LOG SİSTEMİ =================
 client.on('messageDelete', async (message) => {
     if (!message.guild || message.author?.bot) return;
+    
     const settings = getGuildData(message.guild.id);
-    if (!settings || !settings.logChannelId) return;
+    if (!settings || !settings.logActive || !settings.logChannelId) return;
 
     const logChannel = message.guild.channels.cache.get(settings.logChannelId);
     if (logChannel) {
-        const embed = new EmbedBuilder()
-            .setColor('Red')
-            .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL() })
-            .setTitle('🗑️ Mesaj Silindi')
-            .addFields(
-                { name: 'Kanal', value: `${message.channel}`, inline: true },
-                { name: 'İçerik', value: message.content || '*İçerik bulunamadı*' }
-            )
-            .setTimestamp();
-        logChannel.send({ embeds: [embed] });
+        const logMesaji = `🗑️ **Silinen Mesaj**\n👤 **Kullanıcı:** ${message.author} \`(${message.author.id})\`\n📍 **Kanal:** ${message.channel}\n💬 **İçerik:** ${message.content || '*[Sadece Görsel/Dosya]*'}\n──────────────────`;
+        logChannel.send(logMesaji).catch(() => {});
     }
 });
 
 client.on('messageUpdate', async (oldMsg, newMsg) => {
     if (!oldMsg.guild || oldMsg.author?.bot || oldMsg.content === newMsg.content) return;
+    
     const settings = getGuildData(oldMsg.guild.id);
-    if (!settings || !settings.logChannelId) return;
+    if (!settings || !settings.logActive || !settings.logChannelId) return;
 
     const logChannel = oldMsg.guild.channels.cache.get(settings.logChannelId);
     if (logChannel) {
-        const embed = new EmbedBuilder()
-            .setColor('Yellow')
-            .setAuthor({ name: oldMsg.author.tag, iconURL: oldMsg.author.displayAvatarURL() })
-            .setTitle('✏️ Mesaj Düzenlendi')
-            .addFields(
-                { name: 'Eski Hali', value: oldMsg.content || '*Boş*' },
-                { name: 'Yeni Hali', value: newMsg.content || '*Boş*' }
-            )
-            .setTimestamp();
-        logChannel.send({ embeds: [embed] });
+        const logMesaji = `✏️ **Düzenlenen Mesaj**\n👤 **Kullanıcı:** ${oldMsg.author} \`(${oldMsg.author.id})\`\n📍 **Kanal:** ${oldMsg.channel}\n\n🔻 **Eski:** ${oldMsg.content || '*[Boş]*'}\n🔺 **Yeni:** ${newMsg.content || '*[Boş]*'}\n──────────────────`;
+        logChannel.send(logMesaji).catch(() => {});
     }
 });
 
-// --- ANTİ-LİNK VE UYARI SİSTEMİ ---
+// ================= 2. KUSURSUZ ANTI-LINK SİSTEMİ =================
 const warnings = new Map();
 
 client.on('messageCreate', async (message) => {
     if (!message.guild || message.author.bot || message.member.permissions.has('Administrator')) return;
 
-    const linkRegex = /(https?:\/\/[^\s]+)/g;
-    if (linkRegex.test(message.content)) {
-        const settings = getGuildData(message.guild.id);
-        if (!settings) return;
+    const settings = getGuildData(message.guild.id);
+    // Anti-link kapalıysa hiç çalışma
+    if (!settings || !settings.antilinkActive) return;
 
+    const linkRegex = /(https?:\/\/[^\s]+)/g;
+    
+    if (linkRegex.test(message.content)) {
+        // 1. Linki anında sil
         await message.delete().catch(() => {});
+
+        // 2. Log sistemi açıksa "Düz Metin" olarak link atıldığını raporla
+        if (settings.logActive && settings.logChannelId) {
+            const logChannel = message.guild.channels.cache.get(settings.logChannelId);
+            if (logChannel) {
+                const logMesaji = `🚫 **Link Engellendi**\n👤 **Kullanıcı:** ${message.author} \`(${message.author.id})\`\n📍 **Kanal:** ${message.channel}\n🔗 **Atılan Link:** \`${message.content}\`\n──────────────────`;
+                logChannel.send(logMesaji).catch(() => {});
+            }
+        }
+
+        const muteRole = message.guild.roles.cache.get(settings.muteRoleId);
         
+        // 3. Kullanıcı zaten cezalıysa burada dur (Spam yapmasın)
+        if (muteRole && message.member.roles.cache.has(muteRole.id)) {
+            return; 
+        }
+
+        // 4. Normal uyarı motoru
         const userId = message.author.id;
         const currentWarn = (warnings.get(userId) || 0) + 1;
         warnings.set(userId, currentWarn);
 
         if (currentWarn >= 3) {
-            const muteRole = message.guild.roles.cache.get(settings.muteRoleId);
             if (muteRole) {
                 await message.member.roles.add(muteRole).catch(() => {});
-                const muteEmbed = new EmbedBuilder()
-                    .setColor('DarkRed')
-                    .setTitle('🔒 Susturuldu')
-                    .setDescription(`${message.author}, 3 kez link paylaştığın için susturma rolü verildi.`)
-                    .setTimestamp();
-                message.channel.send({ embeds: [muteEmbed] });
-                warnings.delete(userId);
+                message.channel.send(`🔒 ${message.author}, kuralları 3 kez ihlal ettiğiniz için susturuldunuz.`);
+                warnings.delete(userId); // Cezayı alınca uyarıyı sıfırla
             }
         } else {
-            const warnEmbed = new EmbedBuilder()
-                .setColor('Orange')
-                .setTitle('⚠️ Link Yasak La')
-                .setDescription(`${message.author}, link atma knk!\n**Kalan Uyarı Hakkın:** \`${3 - currentWarn}\``);
-            
-            const msg = await message.channel.send({ embeds: [warnEmbed] });
+            const msg = await message.channel.send(`⚠️ ${message.author}, bu sunucuda link paylaşamazsınız! (Kalan Hakkınız: ${3 - currentWarn})`);
             setTimeout(() => msg.delete().catch(() => {}), 5000);
         }
-    }
-});
-
-// Biri sunucuya katıldığında
-client.on('guildMemberAdd', async (member) => {
-    const settings = getGuildData(member.guild.id);
-    if (!settings || !settings.logChannelId) return;
-
-    const logChannel = member.guild.channels.cache.get(settings.logChannelId);
-    if (logChannel) {
-        const embed = new EmbedBuilder()
-            .setColor('Green')
-            .setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL() })
-            .setTitle('📥 Biri Katıldı')
-            .setDescription(`${member} Geldi amk. Nüfus: **${member.guild.memberCount}**`)
-            .setTimestamp();
-        logChannel.send({ embeds: [embed] });
-    }
-});
-
-// Biri sunucudan ayrıldığında
-client.on('guildMemberRemove', async (member) => {
-    const settings = getGuildData(member.guild.id);
-    if (!settings || !settings.logChannelId) return;
-
-    const logChannel = member.guild.channels.cache.get(settings.logChannelId);
-    if (logChannel) {
-        const embed = new EmbedBuilder()
-            .setColor('DarkRed')
-            .setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL() })
-            .setTitle('📤 Biri Ayrıldı')
-            .setDescription(`${member} siktir oldu gitti`)
-            .setTimestamp();
-        logChannel.send({ embeds: [embed] });
     }
 });
 
