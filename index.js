@@ -108,48 +108,42 @@ client.on('messageUpdate', async (oldMsg, newMsg) => {
     }
 });
 
-// ================= 2. KUSURSUZ ANTI-LINK SİSTEMİ =================
+// ================= 2. VE 3. MOTORLAR (MESAJ KONTROLLERİ) =================
 const warnings = new Map();
 
 client.on('messageCreate', async (message) => {
+    // 1. TEMEL KONTROL
+    if (!message.guild || message.author.bot || message.member.permissions.has('Administrator')) return;
 
-// === CAPS LOCK ENGELLEME SİSTEMİ ===
-    // Ayarları çekiyoruz (Eğer anti-link için zaten settings çektiysen, o satırın altına koyabilirsin)
     const settings = getGuildData(message.guild.id);
-    
-    // Eğer sistem açıksa ve mesaj 5 karakterden uzunsa kontrol et
-    if (settings && settings.capsActive && message.content.length > 5) {
-        // Sadece harfleri filtrele (sayıları ve sembolleri yoksay)
+    if (!settings) return;
+
+    // === CAPS LOCK ENGELLEME SİSTEMİ ===
+    if (settings.capsActive && message.content.length > 5) {
         const harfler = message.content.replace(/[^a-zA-ZğüşıöçĞÜŞİÖÇ]/g, '');
-        
         if (harfler.length > 0) {
-            // Büyük harfleri say
             const buyukHarfler = harfler.split('').filter(c => c === c.toUpperCase()).length;
             const oran = buyukHarfler / harfler.length;
 
-            // Eğer mesajın %70'inden fazlası büyük harfse engelle
             if (oran > 0.7) {
                 await message.delete().catch(() => {});
                 const uyari = await message.channel.send(`🔠 ${message.author}, lütfen sürekli büyük harf kullanarak bağırmayın!`);
                 setTimeout(() => uyari.delete().catch(() => {}), 5000);
-                return; // Buradan return atıyoruz ki altındaki link kontrollerine vb. girmesin
+                return; 
             }
         }
     }
-    
-    if (!message.guild || message.author.bot || message.member.permissions.has('Administrator')) return;
 
-    const settings = getGuildData(message.guild.id);
-    // Anti-link kapalıysa hiç çalışma
-    if (!settings || !settings.antilinkActive) return;
+    // === ANTI-LINK VE OTOMATİK CEZA SİSTEMİ ===
+    if (!settings.antilinkActive) return; 
 
     const linkRegex = /(https?:\/\/[^\s]+)/g;
     
     if (linkRegex.test(message.content)) {
-        // 1. Linki anında sil
+        // Linki sil
         await message.delete().catch(() => {});
 
-        // 2. Log sistemi açıksa "Düz Metin" olarak link atıldığını raporla
+        // Log At
         if (settings.logActive && settings.logChannelId) {
             const logChannel = message.guild.channels.cache.get(settings.logChannelId);
             if (logChannel) {
@@ -160,37 +154,50 @@ client.on('messageCreate', async (message) => {
 
         const muteRole = message.guild.roles.cache.get(settings.muteRoleId);
         
-        // 3. Kullanıcı zaten cezalıysa burada dur (Spam yapmasın)
-        if (muteRole && message.member.roles.cache.has(muteRole.id)) {
-            return; 
-        }
+        // Zaten cezalıysa dur
+        if (muteRole && message.member.roles.cache.has(muteRole.id)) return; 
 
-        // 4. Normal uyarı motoru
         const userId = message.author.id;
         const currentWarn = (warnings.get(userId) || 0) + 1;
         warnings.set(userId, currentWarn);
 
-       if (currentWarn >= 5) {
+        if (currentWarn >= 3) {
             if (muteRole) {
-                // 1. Rolü ver
-                await message.member.roles.add(muteRole).catch(() => {});
-                
-                // 2. Discord üzerinden süreli sustur (Timeout) uygula
-                const cezaSuresi = settings.antilinkDuration || 10; // Kurulumda girilen süre (girilmediyse 10 dk)
-                await message.member.timeout(cezaSuresi * 60 * 1000, "5 kez yetkisiz link paylaşımı").catch(() => {});
+                const cezaSuresiDakika = settings.antilinkDuration || 10;
+                const msCinsinden = cezaSuresiDakika * 60 * 1000;
 
-                message.channel.send(`🔒 ${message.author}, kuralları 5 kez ihlal ettiğiniz için cezalı rolünüz verildi ve **${cezaSuresi} dakika** boyunca susturuldunuz.`);
-                
-                // 3. Log sistemine haber ver
+                // Discord Timeout (Susturma) Uygula
+                await message.member.timeout(msCinsinden, "3 Kez Link Paylaşımı").catch(() => {});
+                // Rolü Ver
+                await message.member.roles.add(muteRole).catch(() => {});
+
+                message.channel.send(`🔒 ${message.author}, kuralları 3 kez ihlal ettiğiniz için **${cezaSuresiDakika} dakika** susturuldunuz.`);
+
+                // Ceza Logu
                 if (settings.logActive && settings.logChannelId) {
                     const logChannel = message.guild.channels.cache.get(settings.logChannelId);
                     if (logChannel) {
-                        const logMesaji = `⚖️ **Otomatik Ceza**\n👤 **Kullanıcı:** ${message.author}\n⏳ **Süre:** ${cezaSuresi} Dakika\n📝 **Sebep:** 3 Kez Link Paylaşımı\n──────────────────`;
+                        const logMesaji = `⚖️ **Otomatik Ceza**\n👤 **Kullanıcı:** ${message.author}\n⏳ **Süre:** ${cezaSuresiDakika} Dakika\n📝 **Sebep:** 3 Kez Link Paylaşımı\n──────────────────`;
                         logChannel.send(logMesaji).catch(() => {});
                     }
                 }
-                warnings.delete(userId); 
+
+                // SÜRE BİTİNCE OTOMATİK KURTARMA (TAKİP SİSTEMİ)
+                setTimeout(async () => {
+                    // Rolü Geri Al
+                    await message.member.roles.remove(muteRole).catch(() => {});
+                    
+                    // Uyarıyı "2" yapıyoruz. Böylece adam cezasını çekip geldiğinde tekrar link atarsa, 
+                    // uyarı sayısı direkt 3 olacak ve tekrar anında ceza yiyecek (Sadece 1 hakkı kalmış olacak).
+                    warnings.set(userId, 2); 
+
+                }, msCinsinden); 
             }
         } else {
+            const msg = await message.channel.send(`⚠️ ${message.author}, bu sunucuda link paylaşamazsınız! (Kalan Hakkınız: ${3 - currentWarn})`);
+            setTimeout(() => msg.delete().catch(() => {}), 5000);
+        }
+    }
+});
            
 client.login(process.env.TOKEN);
